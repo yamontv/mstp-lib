@@ -165,6 +165,11 @@ bool STP_GetPortAutoEdge (const struct STP_BRIDGE* bridge, unsigned int portInde
 void STP_SetPortRestrictedRole (struct STP_BRIDGE* bridge, unsigned int portIndex, bool restrictedRole, unsigned int timestamp);
 bool STP_GetPortRestrictedRole (const struct STP_BRIDGE* bridge, unsigned int portIndex);
 
+// Non-standard bridge assurance support.
+void STP_SetPortBridgeAssurance (struct STP_BRIDGE* bridge, unsigned int portIndex, bool bridgeAssurance, unsigned int timestamp);
+bool STP_GetPortBridgeAssurance (const struct STP_BRIDGE* bridge, unsigned int portIndex);
+bool STP_GetPortBridgeAssuranceInconsistent (const struct STP_BRIDGE* bridge, unsigned int portIndex);
+
 // Non-standard loop guard support.
 void STP_SetPortLoopGuard (struct STP_BRIDGE* bridge, unsigned int portIndex, bool loopGuard, unsigned int timestamp);
 bool STP_GetPortLoopGuard (const struct STP_BRIDGE* bridge, unsigned int portIndex);

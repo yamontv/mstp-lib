@@ -5,6 +5,7 @@
 // This file implements 13.30 from 802.1Q-2018.
 
 #include "stp_procedures.h"
+#include "stp_conditions_and_params.h"
 #include "stp_bridge.h"
 #include <assert.h>
 
@@ -73,6 +74,11 @@ static void InitState (STP_BRIDGE* bridge, PortIndex givenPort, State state, uns
 	}
 	else if (state == TICK)
 	{
+		if (bridgeAssuranceEnabled (bridge, givenPort) && (port->bridgeAssuranceWhile > 0))
+			port->bridgeAssuranceWhile--;
+		else if (!bridgeAssuranceEnabled (bridge, givenPort))
+			port->bridgeAssuranceWhile = 0;
+
 		if (port->helloWhen      > 0) port->helloWhen--;
 		if (port->mDelayWhile    > 0) port->mDelayWhile--;
 		if (port->edgeDelayWhile > 0) port->edgeDelayWhile--;

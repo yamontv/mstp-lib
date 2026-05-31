@@ -111,7 +111,7 @@ static void InitState (STP_BRIDGE* bridge, PortIndex givenPort, State state, uns
 	else if (state == TRANSMIT_PERIODIC)
 	{
 		// Note AG: Not clear in the standard: tcWhile of which tree? I'll assume they meant "CIST's tcWhile", since the whole expression is about the CIST.
-		port->newInfo = port->newInfo || (cistDesignatedPort (bridge, givenPort) || (cistRootPort (bridge, givenPort) && (port->trees[CIST_INDEX]->tcWhile != 0)));
+		port->newInfo = port->newInfo || bridgeAssuranceEnabled (bridge, givenPort) || cistDesignatedPort (bridge, givenPort) || (cistRootPort (bridge, givenPort) && (port->trees[CIST_INDEX]->tcWhile != 0));
 
 		port->newInfoMsti = port->newInfoMsti || mstiDesignatedOrTCpropagatingRootPort (bridge, givenPort);
 	}

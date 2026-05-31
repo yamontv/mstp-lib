@@ -140,13 +140,13 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortAndTree pt, State st
 	{
 		if (tree->selected && !tree->updtInfo)
 		{
-			if (((tree->sync && !tree->synced) || (tree->reRoot && (tree->rrWhile != 0)) || tree->disputed) && !port->operEdge && (tree->learn || tree->forward))
+			if (((tree->sync && !tree->synced) || (tree->reRoot && (tree->rrWhile != 0)) || tree->disputed || bridgeAssuranceInconsistent (bridge, givenPort)) && !port->operEdge && (tree->learn || tree->forward))
 				return MASTER_DISCARD;
 
-			if (((tree->fdWhile == 0) || allSynced (bridge, givenPort, givenTree)) && !tree->learn)
+			if (((tree->fdWhile == 0) || allSynced (bridge, givenPort, givenTree)) && !tree->learn && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return MASTER_LEARN;
 
-			if (((tree->fdWhile == 0) || allSynced (bridge, givenPort, givenTree)) && (tree->learn && !tree->forward))
+			if (((tree->fdWhile == 0) || allSynced (bridge, givenPort, givenTree)) && (tree->learn && !tree->forward) && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return MASTER_FORWARD;
 
 			if (tree->proposed && !tree->agree)
@@ -208,16 +208,17 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortAndTree pt, State st
 			if (tree->rrWhile != FwdDelay (bridge, givenPort))
 				return ROOT_PORT;
 
-			if (tree->disputed || (spt(bridge) && !tree->agreed && (tree->learn || tree->forward)))
+			if (((tree->disputed || bridgeAssuranceInconsistent (bridge, givenPort)) && (tree->learn || tree->forward))
+				|| (spt(bridge) && !tree->agreed && (tree->learn || tree->forward)))
 				return ROOT_DISCARD;
 
 			if (tree->reRoot && tree->forward)
 				return REROOTED;
 
-			if (((tree->fdWhile == 0) || (reRooted(bridge, givenPort, givenTree) && (tree->rbWhile == 0) && rstpVersion(bridge))) && !tree->learn && (tree->agreed || !spt(bridge)))
+			if (((tree->fdWhile == 0) || (reRooted(bridge, givenPort, givenTree) && (tree->rbWhile == 0) && rstpVersion(bridge))) && !tree->learn && (tree->agreed || !spt(bridge)) && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return ROOT_LEARN;
 
-			if (((tree->fdWhile == 0) || (reRooted(bridge, givenPort, givenTree) && (tree->rbWhile == 0) && rstpVersion(bridge))) && tree->learn && !tree->forward && (tree->agreed || !spt(bridge)))
+			if (((tree->fdWhile == 0) || (reRooted(bridge, givenPort, givenTree) && (tree->rbWhile == 0) && rstpVersion(bridge))) && tree->learn && !tree->forward && (tree->agreed || !spt(bridge)) && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return ROOT_FORWARD;
 		}
 
@@ -272,13 +273,13 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortAndTree pt, State st
 			if (tree->reRoot && (tree->rrWhile == 0))
 				return DESIGNATED_RETIRED;
 
-			if (((tree->sync && !tree->synced) || (tree->reRoot && (tree->rrWhile != 0)) || tree->disputed || port->isolate) && !port->operEdge && (tree->learn || tree->forward))
+			if (((tree->sync && !tree->synced) || (tree->reRoot && (tree->rrWhile != 0)) || tree->disputed || port->isolate || bridgeAssuranceInconsistent (bridge, givenPort)) && !port->operEdge && (tree->learn || tree->forward))
 				return DESIGNATED_DISCARD;
 
-			if (((tree->fdWhile == 0) || tree->agreed || port->operEdge) && ((tree->rrWhile == 0) || !tree->reRoot) && !tree->sync && !tree->learn && !port->isolate)
+			if (((tree->fdWhile == 0) || tree->agreed || port->operEdge) && ((tree->rrWhile == 0) || !tree->reRoot) && !tree->sync && !tree->learn && !port->isolate && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return DESIGNATED_LEARN;
 
-			if (((tree->fdWhile == 0) || tree->agreed || port->operEdge) && ((tree->rrWhile == 0) || !tree->reRoot) && !tree->sync && (tree->learn && !tree->forward) && !port->isolate)
+			if (((tree->fdWhile == 0) || tree->agreed || port->operEdge) && ((tree->rrWhile == 0) || !tree->reRoot) && !tree->sync && (tree->learn && !tree->forward) && !port->isolate && !bridgeAssuranceInconsistent (bridge, givenPort))
 				return DESIGNATED_FORWARD;
 		}
 

@@ -112,6 +112,7 @@ struct PORT
 	bool rcvdTcn;        // 13.27.r) - 13.27.60
 	bool restrictedRole; // 13.27.s) - 13.27.64
 	bool restrictedTcn;  // 13.27.t) - 13.27.65
+	bool bridgeAssurance; // Not in the standard. Requires BPDUs on point-to-point network ports.
 	bool loopGuard;       // Not in the standard. Keeps expired received information blocked.
 	bool sendRSTP;       // 13.27.u) - 13.27.69
 	bool tcAck;          // 13.27.v) - 13.27.72
@@ -148,6 +149,7 @@ struct PORT
 
 	// 13.25 State machine timers
 	// One instance of the following shall be implemented per port:
+	unsigned short bridgeAssuranceWhile; // Not in the standard. Used by bridge assurance.
 	unsigned short edgeDelayWhile; // a) - 13.25.1
 	unsigned short helloWhen;      // b) - 13.25.3
 	unsigned short mDelayWhile;    // c) - 13.25.4

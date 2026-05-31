@@ -87,6 +87,8 @@ static void InitState (STP_BRIDGE* bridge, PortIndex givenPort, State state, uns
 		port->rcvdInternal = fromSameRegion (bridge, givenPort);
 		rcvMsgs (bridge, givenPort);
 		port->operEdge = port->isolate = port->rcvdBpdu = false;
+		if (bridgeAssuranceEnabled (bridge, givenPort))
+			port->bridgeAssuranceWhile = bridgeAssuranceTimeout (bridge, givenPort);
 		port->edgeDelayWhile = bridge->MigrateTime;
 	}
 	else

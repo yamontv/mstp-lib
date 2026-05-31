@@ -153,6 +153,30 @@ bool cistDesignatedPort	(const STP_BRIDGE* bridge, PortIndex givenPort)
 }
 
 // ============================================================================
+// TRUE if bridge assurance is enabled and currently applies to this port.
+bool bridgeAssuranceEnabled (const STP_BRIDGE* bridge, PortIndex givenPort)
+{
+	const PORT* port = bridge->ports[givenPort];
+	return port->bridgeAssurance
+		&& port->portEnabled
+		&& port->operPointToPointMAC
+		&& !port->operEdge;
+}
+
+// ============================================================================
+bool bridgeAssuranceInconsistent (const STP_BRIDGE* bridge, PortIndex givenPort)
+{
+	const PORT* port = bridge->ports[givenPort];
+	return bridgeAssuranceEnabled (bridge, givenPort) && (port->bridgeAssuranceWhile == 0);
+}
+
+// ============================================================================
+unsigned short bridgeAssuranceTimeout (const STP_BRIDGE* bridge, PortIndex givenPort)
+{
+	return 3 * HelloTime (bridge, givenPort);
+}
+
+// ============================================================================
 // 13.28.8
 // Returns the value of MigrateTime if operPointToPointMAC is TRUE, and the value of MaxAge otherwise.
 unsigned short EdgeDelay (const STP_BRIDGE* bridge, PortIndex givenPort)

@@ -4,6 +4,7 @@
 
 #include "../stp.h"
 #include "stp_bridge.h"
+#include "stp_conditions_and_params.h"
 #include "stp_log.h"
 #include "stp_md5.h"
 #include <string.h>
@@ -310,6 +311,8 @@ void STP_OnPortEnabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int
 	else
 		port->ExternalPortPathCost = port->detectedPortPathCost;
 
+	port->bridgeAssuranceWhile = port->bridgeAssurance ? bridgeAssuranceTimeout (bridge, (PortIndex) portIndex) : 0;
+
 	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 	{
 		PORT_TREE* portTree = port->trees[treeIndex];
@@ -343,6 +346,7 @@ void STP_OnPortDisabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned in
 		// TODO: clear also InternalPortPathCost
 
 		port->portEnabled = false;
+		port->bridgeAssuranceWhile = 0;
 
 		if (bridge->started)
 			RunStateMachines (bridge, timestamp);
@@ -684,6 +688,36 @@ void STP_SetPortRestrictedRole (struct STP_BRIDGE* bridge, unsigned int portInde
 bool STP_GetPortRestrictedRole (const struct STP_BRIDGE* bridge, unsigned int portIndex)
 {
 	return bridge->ports[portIndex]->restrictedRole;
+}
+
+// ============================================================================
+
+void STP_SetPortBridgeAssurance (struct STP_BRIDGE* bridge, unsigned int portIndex, bool bridgeAssurance, unsigned int timestamp)
+{
+	LOG (bridge, portIndex, -1, "{T}: Setting Port {D} bridgeAssurance to {D}...\r\n", timestamp, 1 + portIndex, bridgeAssurance ? 1 : 0);
+
+	PORT* port = bridge->ports[portIndex];
+	if (port->bridgeAssurance != bridgeAssurance)
+	{
+		port->bridgeAssurance = bridgeAssurance;
+		port->bridgeAssuranceWhile = (bridgeAssurance && port->portEnabled) ? bridgeAssuranceTimeout (bridge, (PortIndex) portIndex) : 0;
+
+		if (bridge->started)
+			RunStateMachines (bridge, timestamp);
+	}
+
+	LOG (bridge, -1, -1, "------------------------------------\r\n");
+	FLUSH_LOG (bridge);
+}
+
+bool STP_GetPortBridgeAssurance (const struct STP_BRIDGE* bridge, unsigned int portIndex)
+{
+	return bridge->ports[portIndex]->bridgeAssurance;
+}
+
+bool STP_GetPortBridgeAssuranceInconsistent (const struct STP_BRIDGE* bridge, unsigned int portIndex)
+{
+	return bridgeAssuranceInconsistent (bridge, (PortIndex) portIndex);
 }
 
 // ============================================================================
