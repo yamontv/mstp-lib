@@ -1302,6 +1302,9 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 
 		if ((portTree->infoIs == INFO_IS_RECEIVED) && !portTree->loopInconsistent)
 		{
+			if (port->rcvdInternal && (portTree->portTimes.remainingHops <= 1))
+				continue;
+
 			// a)
 			PRIORITY_VECTOR rootPathPriority;
 			CalculateRootPathPriorityForPort (bridge, portIndex, givenTree, &rootPathPriority);
@@ -1326,7 +1329,7 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 						bridgeTree->rootTimes.MessageAge++;
 					else
 					{
-						assert (bridgeTree->rootTimes.remainingHops > 0);
+						assert (bridgeTree->rootTimes.remainingHops > 1);
 						bridgeTree->rootTimes.remainingHops--;
 					}
 				}
