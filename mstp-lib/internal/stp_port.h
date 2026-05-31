@@ -18,6 +18,7 @@ struct PORT_TREE
 	bool agree      : 1; // 13.27.ap) - 13.27.3
 	bool agreed     : 1; // 13.27.aq) - 13.27.4
 	bool disputed   : 1; // 13.27.at) - 13.27.22
+	bool loopInconsistent : 1; // Not in the standard. Used by loop guard.
 	bool fdbFlush   : 1; // 13.27.au) - 13.27.28
 	bool forward    : 1; // 13.27.av) - 13.27.29
 	bool forwarding : 1; // 13.27.aw) - 13.27.30
@@ -111,6 +112,7 @@ struct PORT
 	bool rcvdTcn;        // 13.27.r) - 13.27.60
 	bool restrictedRole; // 13.27.s) - 13.27.64
 	bool restrictedTcn;  // 13.27.t) - 13.27.65
+	bool loopGuard;       // Not in the standard. Keeps expired received information blocked.
 	bool sendRSTP;       // 13.27.u) - 13.27.69
 	bool tcAck;          // 13.27.v) - 13.27.72
 	bool tick;           // 13.27.w) - 13.27.74

@@ -688,6 +688,35 @@ bool STP_GetPortRestrictedRole (const struct STP_BRIDGE* bridge, unsigned int po
 
 // ============================================================================
 
+void STP_SetPortLoopGuard (struct STP_BRIDGE* bridge, unsigned int portIndex, bool loopGuard, unsigned int timestamp)
+{
+	LOG (bridge, portIndex, -1, "{T}: Setting Port {D} loopGuard to {D}...\r\n", timestamp, 1 + portIndex, loopGuard ? 1 : 0);
+
+	PORT* port = bridge->ports[portIndex];
+	if (port->loopGuard != loopGuard)
+	{
+		port->loopGuard = loopGuard;
+
+		if (bridge->started)
+			RunStateMachines (bridge, timestamp);
+	}
+
+	LOG (bridge, -1, -1, "------------------------------------\r\n");
+	FLUSH_LOG (bridge);
+}
+
+bool STP_GetPortLoopGuard (const struct STP_BRIDGE* bridge, unsigned int portIndex)
+{
+	return bridge->ports[portIndex]->loopGuard;
+}
+
+bool STP_GetPortLoopInconsistent (const struct STP_BRIDGE* bridge, unsigned int portIndex, unsigned int treeIndex)
+{
+	return bridge->ports[portIndex]->trees[treeIndex]->loopInconsistent;
+}
+
+// ============================================================================
+
 void STP_SetAdminPointToPointMAC (struct STP_BRIDGE* bridge, unsigned int portIndex, enum STP_ADMIN_P2P adminPointToPointMAC, unsigned int timestamp)
 {
 	const char* p2pString = STP_GetAdminP2PString (adminPointToPointMAC);

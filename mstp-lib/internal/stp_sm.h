@@ -86,6 +86,7 @@ namespace PortInformation {
 		OTHER,
 		CURRENT,
 		RECEIVE,
+		LOOP_INCONSISTENT,
 	};
 
 	extern const StateMachine<State, PortAndTree> sm;

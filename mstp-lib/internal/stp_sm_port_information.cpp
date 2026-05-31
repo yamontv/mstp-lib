@@ -26,10 +26,22 @@ static const char* GetStateName (State state)
 		case OTHER:					return "OTHER";
 		case CURRENT:				return "CURRENT";
 		case RECEIVE:				return "RECEIVE";
+		case LOOP_INCONSISTENT:		return "LOOP_INCONSISTENT";
 		default:					return "(undefined)";
 	}
 }
 #endif
+
+// ============================================================================
+
+static bool ShouldEnterLoopInconsistent (const PORT* port, const PORT_TREE* portTree)
+{
+	return port->loopGuard
+		&& ((portTree->role == STP_PORT_ROLE_ROOT)
+			|| (portTree->role == STP_PORT_ROLE_ALTERNATE)
+			|| (portTree->role == STP_PORT_ROLE_BACKUP)
+			|| (portTree->role == STP_PORT_ROLE_MASTER));
+}
 
 // ============================================================================
 
@@ -102,6 +114,22 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortAndTree pt, State st
 			return UPDATE;
 
 		if ((portTree->infoIs == INFO_IS_RECEIVED) && (portTree->rcvdInfoWhile == 0) && !portTree->updtInfo && !rcvdXstMsg (bridge, givenPort, givenTree))
+		{
+			if (ShouldEnterLoopInconsistent (port, portTree))
+				return LOOP_INCONSISTENT;
+
+			return AGED;
+		}
+
+		if (rcvdXstMsg (bridge, givenPort, givenTree) && !updtXstInfo (bridge, givenPort, givenTree))
+			return RECEIVE;
+
+		return (State)0;
+	}
+
+	if (state == LOOP_INCONSISTENT)
+	{
+		if (!port->loopGuard)
 			return AGED;
 
 		if (rcvdXstMsg (bridge, givenPort, givenTree) && !updtXstInfo (bridge, givenPort, givenTree))
@@ -149,10 +177,12 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 		portTree->rcvdMsg = false;
 		portTree->proposing = portTree->proposed = portTree->agree = portTree->agreed = false;
 		portTree->rcvdInfoWhile = 0;
+		portTree->loopInconsistent = false;
 		portTree->infoIs = INFO_IS_DISABLED; portTree->reselect = true; portTree->selected = false;
 	}
 	else if (state == AGED)
 	{
+		portTree->loopInconsistent = false;
 		portTree->infoIs = INFO_IS_AGED;
 		portTree->reselect = true;
 		portTree->selected = false;
@@ -174,6 +204,7 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 
 		portTree->portTimes = portTree->designatedTimes;
 		portTree->updtInfo = false;
+		portTree->loopInconsistent = false;
 		portTree->infoIs = INFO_IS_MINE;
 
 		if (givenTree == CIST_INDEX)
@@ -184,6 +215,7 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 	else if (state == SUPERIOR_DESIGNATED)
 	{
 		port->infoInternal = port->rcvdInternal;
+		portTree->loopInconsistent = false;
 		portTree->agreed = portTree->proposing = false;
 		recordProposal (bridge, givenPort, givenTree);
 		setTcFlags (bridge, givenPort, givenTree);
@@ -201,6 +233,7 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 	else if (state == REPEATED_DESIGNATED)
 	{
 		port->infoInternal = port->rcvdInternal;
+		portTree->loopInconsistent = false;
 		recordProposal (bridge, givenPort, givenTree);
 		setTcFlags (bridge, givenPort, givenTree);
 		recordAgreement (bridge, givenPort, givenTree);
@@ -209,8 +242,16 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 	}
 	else if (state == INFERIOR_DESIGNATED)
 	{
+		portTree->loopInconsistent = false;
 		recordDispute (bridge, givenPort, givenTree);
 		portTree->rcvdMsg = false;
+	}
+	else if (state == LOOP_INCONSISTENT)
+	{
+		portTree->loopInconsistent = true;
+		portTree->reselect = true;
+		portTree->selected = false;
+		portTree->updtInfo = false;
 	}
 	else if (state == NOT_DESIGNATED)
 	{

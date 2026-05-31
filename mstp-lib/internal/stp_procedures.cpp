@@ -1226,7 +1226,7 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 		PORT* port = bridge->ports [portIndex];
 		PORT_TREE* portTree = port->trees [givenTree];
 
-		if (portTree->infoIs == INFO_IS_RECEIVED)
+		if ((portTree->infoIs == INFO_IS_RECEIVED) && !portTree->loopInconsistent)
 		{
 			// a)
 			PRIORITY_VECTOR rootPathPriority;
