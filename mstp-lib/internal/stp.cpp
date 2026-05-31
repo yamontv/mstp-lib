@@ -297,6 +297,26 @@ static unsigned int GetDefaultPortPathCost (unsigned int speedMegabitsPerSecond)
 		return 2;
 }
 
+static void UpdateInternalPortPathCost (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int treeIndex)
+{
+	PORT* port = bridge->ports[portIndex];
+	PORT_TREE* portTree = port->trees[treeIndex];
+
+	if (!port->portEnabled || !bridge->IsTreeEnabled (treeIndex))
+		return;
+
+	if (portTree->adminInternalPortPathCost != 0)
+		portTree->InternalPortPathCost = portTree->adminInternalPortPathCost;
+	else
+		portTree->InternalPortPathCost = port->detectedPortPathCost;
+}
+
+static void UpdateInternalPortPathCosts (STP_BRIDGE* bridge, unsigned int portIndex)
+{
+	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
+		UpdateInternalPortPathCost (bridge, portIndex, treeIndex);
+}
+
 void STP_OnPortEnabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int speedMegabitsPerSecond, bool detectedPointToPointMAC, unsigned int timestamp)
 {
 	LOG (bridge, -1, -1, "{T}: Port {D} good\r\n", timestamp, 1 + portIndex);
@@ -321,14 +341,7 @@ void STP_OnPortEnabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int
 
 	port->bridgeAssuranceWhile = port->bridgeAssurance ? bridgeAssuranceTimeout (bridge, (PortIndex) portIndex) : 0;
 
-	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
-	{
-		PORT_TREE* portTree = port->trees[treeIndex];
-		if (portTree->adminInternalPortPathCost != 0)
-			portTree->InternalPortPathCost = portTree->adminInternalPortPathCost;
-		else
-			portTree->InternalPortPathCost = port->detectedPortPathCost;
-	}
+	UpdateInternalPortPathCosts (bridge, portIndex);
 
 	if (bridge->started && port->adminEnabled)
 		RunStateMachines (bridge, timestamp);
@@ -417,6 +430,11 @@ void STP_SetMstiEnabled (STP_BRIDGE* bridge, unsigned int treeIndex, bool enable
 			DisableTreeState (bridge, treeIndex, timestamp);
 
 		tree->enabled = enabled;
+		if (enabled)
+		{
+			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+				UpdateInternalPortPathCost (bridge, portIndex, treeIndex);
+		}
 
 		if (bridge->started)
 			RestartStateMachines (bridge, timestamp);
@@ -1266,6 +1284,8 @@ void STP_SetStpVersion (STP_BRIDGE* bridge, enum STP_VERSION version, unsigned i
 		LOG (bridge, -1, -1, "\r\n");
 
 		bridge->ForceProtocolVersion = version;
+		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+			UpdateInternalPortPathCosts (bridge, portIndex);
 
 		if (bridge->started)
 			RestartStateMachines (bridge, timestamp);
