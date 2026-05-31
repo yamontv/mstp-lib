@@ -44,7 +44,12 @@ bool betterorsameInfo (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenT
 void clearAllRcvdMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 {
 	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
+	{
+		if (!bridge->IsTreeEnabled (treeIndex))
+			continue;
+
 		bridge->ports [givenPort]->trees [treeIndex]->rcvdMsg = false;
+	}
 }
 
 // ============================================================================
@@ -53,7 +58,12 @@ void clearAllRcvdMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 void clearReselectTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		bridge->ports [portIndex]->trees [givenTree]->reselect = false;
+	}
 }
 
 // ============================================================================
@@ -166,7 +176,12 @@ void newTcWhile (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree, u
 		{
 			bool allZero = true;
 			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+			{
+				if (!bridge->IsPortEnabled (portIndex))
+					continue;
+
 				allZero &= (bridge->ports[portIndex]->trees[givenTree]->tcWhile == 0);
+			}
 			if (allZero)
 				bridge->callbacks.onTopologyChange (bridge, (unsigned int) givenTree, timestamp);
 		}
@@ -286,7 +301,12 @@ void rcvMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 		port->rcvdTcn = true;
 
 		for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
+		{
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
 			port->trees [treeIndex]->rcvdTc = true;
+		}
 	}
 	else if ((bridge->receivedBpduType == VALIDATED_BPDU_TYPE_STP_CONFIG)
 		||   (bridge->receivedBpduType == VALIDATED_BPDU_TYPE_RST)
@@ -397,11 +417,12 @@ void rcvMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 
 		const MSTI_CONFIG_MESSAGE* mstiMessages = reinterpret_cast<const MSTI_CONFIG_MESSAGE*>(bridge->receivedBpduContent + 1);
 
-		if (mstiMessageCount > bridge->mstiCount)
+		const size_t activeMstiMessageCount = bridge->treeCount() - 1;
+		if (mstiMessageCount > activeMstiMessageCount)
 		{
 			// The sender sent us too many MSTI messages. Let's ignore the ones we can't handle.
-			LOG (bridge, -1, -1, "rcvMsgs() -- Ignoring MSTI messages {D}..{D}\r\n", (int)bridge->mstiCount, (int)mstiMessageCount - 1);
-			mstiMessageCount = bridge->mstiCount;
+			LOG (bridge, -1, -1, "rcvMsgs() -- Ignoring MSTI messages {D}..{D}\r\n", (int)activeMstiMessageCount, (int)mstiMessageCount - 1);
+			mstiMessageCount = activeMstiMessageCount;
 		}
 		
 		for (size_t messageIndex = 0; messageIndex < mstiMessageCount; messageIndex++)
@@ -409,6 +430,8 @@ void rcvMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 			const MSTI_CONFIG_MESSAGE* message = &mstiMessages[messageIndex];
 
 			size_t mstid = 1 + messageIndex;
+			if (!bridge->IsTreeEnabled ((unsigned int)mstid))
+				continue;
 
 			PORT_TREE* portTree = port->trees[mstid];
 
@@ -487,6 +510,9 @@ void recordAgreement (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTr
 		{
 			for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
 			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
 				port->trees [treeIndex]->agreed    = cistPortTree->agreed;
 				port->trees [treeIndex]->proposing = cistPortTree->proposing;
 			}
@@ -560,6 +586,9 @@ void recordDispute (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree
 			{
 				for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
 				{
+					if (!bridge->IsTreeEnabled (treeIndex))
+						continue;
+
 					port->trees [treeIndex]->disputed = true;
 					port->trees [treeIndex]->agreed = false;
 				}
@@ -596,7 +625,12 @@ void recordMastered (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTre
 		if (port->rcvdInternal == false)
 		{
 			for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
+			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
 				port->mastered = false;
+			}
 		}
 	}
 	else
@@ -654,7 +688,12 @@ void recordProposal (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTre
 			if (!port->rcvdInternal)
 			{
 				for (unsigned int mstiIndex = 1; mstiIndex < bridge->treeCount(); mstiIndex++)
+				{
+					if (!bridge->IsTreeEnabled (mstiIndex))
+						continue;
+
 					port->trees [mstiIndex]->proposed = port->trees [CIST_INDEX]->proposed;
+				}
 			}
 		}
 	}
@@ -699,7 +738,12 @@ void recordTimes (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree)
 void setReRootTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		bridge->ports [portIndex]->trees [givenTree]->reRoot = true;
+	}
 }
 
 // ============================================================================
@@ -710,12 +754,20 @@ void setSelectedTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 {
 	for (unsigned int portIndex = 0;  portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		if (bridge->ports [portIndex]->trees [givenTree]->reselect)
 			return;
 	}
 
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		bridge->ports [portIndex]->trees [givenTree]->selected = true;
+	}
 }
 
 // ============================================================================
@@ -724,7 +776,12 @@ void setSelectedTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 void setSyncTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		bridge->ports [portIndex]->trees [givenTree]->sync = true;
+	}
 }
 
 // ============================================================================
@@ -756,7 +813,12 @@ void setTcFlags (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree)
 		if ((port->rcvdInternal == false) && cistTree->msgFlagsTc)
 		{
 			for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
+			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
 				port->trees [treeIndex]->rcvdTc = true;
+			}
 		}
 
 		if (port->rcvdInternal)
@@ -784,6 +846,9 @@ void setTcPropTree (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree
 	{
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			if (portIndex != (unsigned int) givenPort)
 				bridge->ports [portIndex]->trees [givenTree]->tcProp = true;
 		}
@@ -799,12 +864,18 @@ void syncMaster (STP_BRIDGE* bridge)
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		PORT* port = bridge->ports [portIndex];
 
 		if (port->infoInternal)
 		{
 			for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
 			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
 				PORT_TREE* portTree = port->trees [treeIndex];
 				portTree->agree = false;
 				portTree->agreed = false;
@@ -884,7 +955,7 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 	if (bridge->ForceProtocolVersion < 3)
 		bpduSize = (unsigned int) offsetof (struct MSTP_BPDU, Version3Length);
 	else
-		bpduSize = sizeof(MSTP_BPDU) + bridge->mstiCount * sizeof(MSTI_CONFIG_MESSAGE);
+		bpduSize = sizeof(MSTP_BPDU) + (bridge->treeCount() - 1) * sizeof(MSTI_CONFIG_MESSAGE);
 
 	FLUSH_LOG (bridge);
 
@@ -969,7 +1040,7 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 		MSTI_CONFIG_MESSAGE* mstiMessage = reinterpret_cast<MSTI_CONFIG_MESSAGE*>(bpdu + 1);
 
 		// 14.4.1 in 802.1Q-2018
-		for (unsigned int mstiIndex = 0; mstiIndex < bridge->mstiCount; mstiIndex++)
+		for (unsigned int mstiIndex = 0; mstiIndex < (bridge->treeCount() - 1); mstiIndex++)
 		{
 			const PORT_TREE* tree = port->trees [1 + mstiIndex];
 
@@ -1223,6 +1294,9 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		PORT* port = bridge->ports [portIndex];
 		PORT_TREE* portTree = port->trees [givenTree];
 
@@ -1265,6 +1339,9 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		PORT* port = bridge->ports [portIndex];
 		PORT_TREE* portTree = port->trees [givenTree];
 
@@ -1292,6 +1369,9 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		PORT* port = bridge->ports [portIndex];
 		PORT_TREE* portTree = port->trees [givenTree];
 		PORT_TREE* cistPortTree = port->trees [CIST_INDEX];
@@ -1451,5 +1531,10 @@ void updtRolesTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 void updtRolesDisabledTree (STP_BRIDGE* bridge, TreeIndex givenTree)
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		bridge->ports [portIndex]->trees [givenTree]->selectedRole = STP_PORT_ROLE_DISABLED;
+	}
 }

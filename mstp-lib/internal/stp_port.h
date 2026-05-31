@@ -114,6 +114,7 @@ struct PORT
 	bool restrictedTcn;  // 13.27.t) - 13.27.65
 	bool bridgeAssurance; // Not in the standard. Requires BPDUs on point-to-point network ports.
 	bool loopGuard;       // Not in the standard. Keeps expired received information blocked.
+	bool adminEnabled;    // Non-standard. Allows applications to keep allocated ports out of the state machines.
 	bool sendRSTP;       // 13.27.u) - 13.27.69
 	bool tcAck;          // 13.27.v) - 13.27.72
 	bool tick;           // 13.27.w) - 13.27.74

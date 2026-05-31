@@ -87,6 +87,9 @@ static void InitState (STP_BRIDGE* bridge, PortIndex givenPort, State state, uns
 
 		for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 		{
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
 			PORT_TREE* portTree = port->trees [treeIndex];
 
 			if (portTree->tcWhile       > 0) portTree->tcWhile--;

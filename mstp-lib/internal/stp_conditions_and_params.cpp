@@ -35,6 +35,9 @@ bool allSynced (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTr
 	// a) For all ports for the given tree, selected is TRUE, the port's role is the same as its selectedRole, and updtInfo is FALSE; and
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		const PORT_TREE* portTree = bridge->ports[portIndex]->trees[givenTree];
 
 		if (portTree->selected == false)
@@ -65,6 +68,9 @@ bool allSynced (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTr
 		// 1) Root Port or Alternate Port and synced is TRUE for all ports for the given tree other than the Root Port; or
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			const PORT_TREE* portTree = bridge->ports[portIndex]->trees[givenTree];
 
 			if (portTree->role == STP_PORT_ROLE_ROOT)
@@ -82,6 +88,9 @@ bool allSynced (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTr
 		// 4) Master Port     and synced is TRUE for all ports for the given tree other than the given port.
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			if (portIndex == (unsigned int) givenPort)
 				continue;
 
@@ -112,6 +121,9 @@ bool allTransmitReady (const STP_BRIDGE* bridge, PortIndex givenPort)
 	PORT* port = bridge->ports[givenPort];
 	for (unsigned int ti = 0; ti < bridge->treeCount(); ti++)
 	{
+		if (!bridge->IsTreeEnabled (ti))
+			continue;
+
 		PORT_TREE* tree = port->trees[ti];
 		if (!tree->selected || tree->updtInfo)
 			return false;
@@ -158,6 +170,7 @@ bool bridgeAssuranceEnabled (const STP_BRIDGE* bridge, PortIndex givenPort)
 {
 	const PORT* port = bridge->ports[givenPort];
 	return port->bridgeAssurance
+		&& port->adminEnabled
 		&& port->portEnabled
 		&& port->operPointToPointMAC
 		&& !port->operEdge;
@@ -241,6 +254,9 @@ bool mstiDesignatedOrTCpropagatingRootPort (const STP_BRIDGE* bridge, PortIndex 
 
 	for (unsigned int mstiIndex = 0; mstiIndex < bridge->mstiCount; mstiIndex++)
 	{
+		if (!bridge->IsTreeEnabled (1 + mstiIndex))
+			continue;
+
 		PORT_TREE* mstiInstance = bridge->ports[givenPort]->trees[1 + mstiIndex];
 
 		if (mstiInstance->role == STP_PORT_ROLE_DESIGNATED)
@@ -263,6 +279,9 @@ bool mstiMasterPort (const STP_BRIDGE* bridge, PortIndex givenPort)
 	PORT* port = bridge->ports[givenPort];
 	for (unsigned int mstiIndex = 0; mstiIndex < bridge->mstiCount; mstiIndex++)
 	{
+		if (!bridge->IsTreeEnabled (1 + mstiIndex))
+			continue;
+
 		if (port->trees [1 + mstiIndex]->role == STP_PORT_ROLE_MASTER)
 			return true;
 	}
@@ -288,6 +307,9 @@ bool rcvdAnyMsg (const STP_BRIDGE* bridge, PortIndex givenPort)
 	PORT* port = bridge->ports [givenPort];
 	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 	{
+		if (!bridge->IsTreeEnabled (treeIndex))
+			continue;
+
 		if (port->trees[treeIndex]->rcvdMsg)
 			return true;
 	}
@@ -313,6 +335,9 @@ bool rcvdMstiMsg (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex given
 	assert (givenTree != CIST_INDEX); // this must be invoked on MSTIs only
 
 	PORT* port = bridge->ports[givenPort];
+	if (!bridge->IsTreeEnabled (givenTree))
+		return false;
+
 	return !port->trees[CIST_INDEX]->rcvdMsg && port->trees[givenTree]->rcvdMsg;
 }
 
@@ -323,6 +348,9 @@ bool reRooted (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTre
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		if (portIndex == givenPort)
 			continue;
 
@@ -378,6 +406,9 @@ bool updtMstiInfo (const STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex give
 {
 	assert (bridge->ForceProtocolVersion <= STP_VERSION_MSTP); // not yet implemented for SPT
 	assert (givenTree != CIST_INDEX); // this must be invoked on MSTIs only
+
+	if (!bridge->IsTreeEnabled (givenTree))
+		return false;
 
 	return bridge->ports[givenPort]->trees[givenTree]->updtInfo || bridge->ports[givenPort]->trees[CIST_INDEX]->updtInfo;
 }

@@ -51,6 +51,9 @@ static State CheckConditions (const STP_BRIDGE* bridge, TreeIndex givenTree, Sta
 	{
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			if (bridge->ports [portIndex]->trees [givenTree]->reselect)
 				return ROLE_SELECTION;
 		}
@@ -89,4 +92,3 @@ const StateMachine<State, TreeIndex> PortRoleSelection::sm =
 	&CheckConditions,
 	&InitState
 };
-

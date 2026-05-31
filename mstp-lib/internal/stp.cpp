@@ -12,6 +12,8 @@
 static void RunStateMachines (STP_BRIDGE* bridge, unsigned int timestamp);
 static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp);
 static void RecomputePrioritiesAndPortRoles (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned int timestamp);
+static void DisablePortState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp);
+static void DisableTreeState (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned int timestamp);
 static void ComputeMstConfigDigest (STP_BRIDGE* bridge);
 
 // ============================================================================
@@ -83,6 +85,7 @@ STP_BRIDGE* STP_CreateBridge (unsigned int portCount,
 	// per-bridge CIST vars
 	bridge->trees [CIST_INDEX] = (BRIDGE_TREE*) callbacks->allocAndZeroMemory (sizeof (BRIDGE_TREE));
 	assert (bridge->trees [CIST_INDEX] != NULL);
+	bridge->trees [CIST_INDEX]->enabled = true;
 	bridge->trees [CIST_INDEX]->SetBridgeIdentifier (0x8000, CIST_INDEX, bridgeAddress);
 	// 13.26.4 in 802.1Q-2018
 	// Defaults from Table 13-5 on page 510 in 802.1Q-2018
@@ -96,6 +99,7 @@ STP_BRIDGE* STP_CreateBridge (unsigned int portCount,
 	{
 		bridge->trees [treeIndex] = (BRIDGE_TREE*) callbacks->allocAndZeroMemory (sizeof (BRIDGE_TREE));
 		assert (bridge->trees [treeIndex] != NULL);
+		bridge->trees [treeIndex]->enabled = true;
 		bridge->trees [treeIndex]->SetBridgeIdentifier (0x8000, treeIndex, bridgeAddress);
 		bridge->trees [treeIndex]->BridgeTimes.remainingHops = 20;
 	}
@@ -122,6 +126,7 @@ STP_BRIDGE* STP_CreateBridge (unsigned int portCount,
 		}
 
 		port->adminPointToPointMAC = STP_ADMIN_P2P_AUTO;
+		port->adminEnabled = true;
 		port->AutoEdge = true;
 		port->enableBPDUrx = true;
 		port->enableBPDUtx = true;
@@ -204,6 +209,9 @@ void STP_StopBridge (STP_BRIDGE* bridge, unsigned int timestamp)
 		PORT* port = bridge->ports[pi];
 		for (unsigned int ti = 0; ti < bridge->treeCount(); ti++)
 		{
+			if (!bridge->IsPortTreeEnabled (pi, ti))
+				continue;
+
 			PORT_TREE* tree = port->trees[ti];
 
 			if (!tree->learning)
@@ -322,7 +330,7 @@ void STP_OnPortEnabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int
 			portTree->InternalPortPathCost = port->detectedPortPathCost;
 	}
 
-	if (bridge->started)
+	if (bridge->started && port->adminEnabled)
 		RunStateMachines (bridge, timestamp);
 
 	LOG (bridge, -1, -1, "------------------------------------\r\n");
@@ -348,12 +356,80 @@ void STP_OnPortDisabled (STP_BRIDGE* bridge, unsigned int portIndex, unsigned in
 		port->portEnabled = false;
 		port->bridgeAssuranceWhile = 0;
 
-		if (bridge->started)
+		if (bridge->started && port->adminEnabled)
 			RunStateMachines (bridge, timestamp);
 	}
 
 	LOG (bridge, -1, -1, "------------------------------------\r\n");
 	FLUSH_LOG (bridge);
+}
+
+// ============================================================================
+
+void STP_SetPortAdminEnabled (STP_BRIDGE* bridge, unsigned int portIndex, bool enabled, unsigned int timestamp)
+{
+	assert (portIndex < bridge->portCount);
+
+	LOG (bridge, -1, -1, "{T}: Setting Port {D} adminEnabled to {D}...\r\n", timestamp, 1 + portIndex, enabled ? 1 : 0);
+
+	PORT* port = bridge->ports[portIndex];
+	if (port->adminEnabled == enabled)
+	{
+		LOG (bridge, -1, -1, " nothing changed.\r\n");
+	}
+	else
+	{
+		if (!enabled)
+			DisablePortState (bridge, portIndex, timestamp);
+
+		port->adminEnabled = enabled;
+
+		if (bridge->started)
+			RestartStateMachines (bridge, timestamp);
+	}
+
+	LOG (bridge, -1, -1, "------------------------------------\r\n");
+	FLUSH_LOG (bridge);
+}
+
+bool STP_GetPortAdminEnabled (const STP_BRIDGE* bridge, unsigned int portIndex)
+{
+	assert (portIndex < bridge->portCount);
+	return bridge->ports[portIndex]->adminEnabled;
+}
+
+// ============================================================================
+
+void STP_SetMstiEnabled (STP_BRIDGE* bridge, unsigned int treeIndex, bool enabled, unsigned int timestamp)
+{
+	assert ((treeIndex > CIST_INDEX) && (treeIndex <= bridge->mstiCount));
+
+	LOG (bridge, -1, -1, "{T}: Setting {TN} enabled to {D}...\r\n", timestamp, treeIndex, enabled ? 1 : 0);
+
+	BRIDGE_TREE* tree = bridge->trees[treeIndex];
+	if (tree->enabled == enabled)
+	{
+		LOG (bridge, -1, -1, " nothing changed.\r\n");
+	}
+	else
+	{
+		if (!enabled)
+			DisableTreeState (bridge, treeIndex, timestamp);
+
+		tree->enabled = enabled;
+
+		if (bridge->started)
+			RestartStateMachines (bridge, timestamp);
+	}
+
+	LOG (bridge, -1, -1, "------------------------------------\r\n");
+	FLUSH_LOG (bridge);
+}
+
+bool STP_GetMstiEnabled (const STP_BRIDGE* bridge, unsigned int treeIndex)
+{
+	assert (treeIndex <= bridge->mstiCount);
+	return (treeIndex == CIST_INDEX) || bridge->trees[treeIndex]->enabled;
 }
 
 // ============================================================================
@@ -365,7 +441,10 @@ void STP_OnOneSecondTick (STP_BRIDGE* bridge, unsigned int timestamp)
 		LOG (bridge, -1, -1, "{T}: One second:\r\n", timestamp);
 
 		for (unsigned int givenPort = 0; givenPort < bridge->portCount; givenPort++)
-			bridge->ports [givenPort]->tick = true;
+		{
+			if (bridge->IsPortEnabled (givenPort))
+				bridge->ports [givenPort]->tick = true;
+		}
 
 		RunStateMachines (bridge, timestamp);
 
@@ -380,7 +459,11 @@ void STP_OnBpduReceived (STP_BRIDGE* bridge, unsigned int portIndex, const unsig
 {
 	if (bridge->started)
 	{
-		if (bridge->ports [portIndex]->portEnabled == false)
+		if (bridge->ports [portIndex]->adminEnabled == false)
+		{
+			LOG (bridge, -1, -1, "{T}: WARNING: BPDU received on administratively disabled port {D}. The STP library is discarding it.\r\n", timestamp, 1 + portIndex);
+		}
+		else if (bridge->ports [portIndex]->portEnabled == false)
 		{
 			LOG (bridge, -1, -1, "{T}: WARNING: BPDU received on disabled port {D}. The STP library is discarding it.\r\n", timestamp, 1 + portIndex);
 		}
@@ -536,6 +619,59 @@ void LogTransition (STP_BRIDGE* bridge, const char* smName, const char* newState
 
 // ============================================================================
 
+static void DisablePortTreeState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int treeIndex, unsigned int timestamp)
+{
+	PORT_TREE* tree = bridge->ports[portIndex]->trees[treeIndex];
+	const bool notify = bridge->started && bridge->IsPortTreeEnabled (portIndex, treeIndex);
+
+	if (tree->learning)
+	{
+		if (notify)
+			bridge->callbacks.enableLearning (bridge, portIndex, treeIndex, false, timestamp);
+		tree->learning = false;
+	}
+
+	if (tree->forwarding)
+	{
+		if (notify)
+			bridge->callbacks.enableForwarding (bridge, portIndex, treeIndex, false, timestamp);
+		tree->forwarding = false;
+	}
+
+	if (notify && (tree->role != STP_PORT_ROLE_DISABLED) && (bridge->callbacks.onPortRoleChanged != NULL))
+		bridge->callbacks.onPortRoleChanged (bridge, portIndex, treeIndex, STP_PORT_ROLE_DISABLED, timestamp);
+
+	tree->role = STP_PORT_ROLE_DISABLED;
+	tree->selectedRole = STP_PORT_ROLE_DISABLED;
+	tree->infoIs = INFO_IS_DISABLED;
+	tree->rcvdMsg = false;
+	tree->proposing = false;
+	tree->proposed = false;
+	tree->agree = false;
+	tree->agreed = false;
+	tree->loopInconsistent = false;
+	tree->learn = false;
+	tree->forward = false;
+	tree->selected = false;
+	tree->reselect = true;
+	tree->updtInfo = false;
+	tree->rcvdInfoWhile = 0;
+}
+
+static void DisablePortState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp)
+{
+	for (unsigned int treeIndex = 0; treeIndex < (1 + bridge->mstiCount); treeIndex++)
+		DisablePortTreeState (bridge, portIndex, treeIndex, timestamp);
+}
+
+static void DisableTreeState (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned int timestamp)
+{
+	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+		DisablePortTreeState (bridge, portIndex, treeIndex, timestamp);
+}
+
+// ============================================================================
+
 template<typename State, typename PortTreeArgs>
 static bool RunStateMachineInstance (STP_BRIDGE* bridge, const StateMachine<State, PortTreeArgs>& smInfo, State& state, unsigned int timestamp, PortTreeArgs portTreeArgs)
 {
@@ -573,6 +709,9 @@ static void RunStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
 			PORT* port = bridge->ports[portIndex];
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			changed |= RunStateMachineInstance (bridge, PortTimers           ::sm, port->portTimersState,            timestamp, (PortIndex) portIndex);
 			changed |= RunStateMachineInstance (bridge, PortProtocolMigration::sm, port->portProtocolMigrationState, timestamp, (PortIndex) portIndex);
 			changed |= RunStateMachineInstance (bridge, PortReceive          ::sm, port->portReceiveState,           timestamp, (PortIndex) portIndex);
@@ -581,6 +720,9 @@ static void RunStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 
 			for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
 				PORT_TREE* tree = port->trees[treeIndex];
 				PortAndTree pt = { (PortIndex)portIndex, (TreeIndex)treeIndex };
 				changed |= RunStateMachineInstance (bridge, PortInformation    ::sm, tree->portInformationState,     timestamp, pt);
@@ -592,6 +734,9 @@ static void RunStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 
 		for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 		{
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
 			BRIDGE_TREE* tree = bridge->trees[treeIndex];
 			changed |= RunStateMachineInstance (bridge, PortRoleSelection::sm, tree->portRoleSelectionState, timestamp, (TreeIndex) treeIndex);
 		}
@@ -604,6 +749,9 @@ static void RunStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 			{
 				PORT* port = bridge->ports[portIndex];
+				if (!bridge->IsPortEnabled (portIndex))
+					continue;
+
 				changed |= RunStateMachineInstance (bridge, PortTransmit::sm, port->portTransmitState, timestamp, (PortIndex) portIndex);
 			}
 		}
@@ -615,6 +763,9 @@ static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 	{
 		PORT* port = bridge->ports[portIndex];
+		if (!bridge->IsPortEnabled (portIndex))
+			continue;
+
 		port->portTimersState            = (PortTimers::State)0;
 		port->portProtocolMigrationState = (PortProtocolMigration::State)0;
 		port->portReceiveState           = (PortReceive::State)0;
@@ -624,6 +775,9 @@ static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 
 		for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 		{
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
 			PORT_TREE* tree = port->trees[treeIndex];
 			tree->portInformationState     = (PortInformation::State)0;
 			tree->portRoleTransitionsState = (PortRoleTransitions::State)0;
@@ -633,7 +787,12 @@ static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 	}
 
 	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
+	{
+		if (!bridge->IsTreeEnabled (treeIndex))
+			continue;
+
 		bridge->trees[treeIndex]->portRoleSelectionState = (PortRoleSelection::State)0;
+	}
 
 	bridge->BEGIN = true;
 	RunStateMachines (bridge, timestamp);
@@ -677,7 +836,7 @@ void STP_SetPortRestrictedRole (struct STP_BRIDGE* bridge, unsigned int portInde
 	{
 		port->restrictedRole = restrictedRole;
 
-		if (bridge->started)
+		if (bridge->started && port->adminEnabled)
 			RecomputePrioritiesAndPortRoles (bridge, CIST_INDEX, timestamp);
 	}
 
@@ -700,9 +859,9 @@ void STP_SetPortBridgeAssurance (struct STP_BRIDGE* bridge, unsigned int portInd
 	if (port->bridgeAssurance != bridgeAssurance)
 	{
 		port->bridgeAssurance = bridgeAssurance;
-		port->bridgeAssuranceWhile = (bridgeAssurance && port->portEnabled) ? bridgeAssuranceTimeout (bridge, (PortIndex) portIndex) : 0;
+		port->bridgeAssuranceWhile = (bridgeAssurance && port->adminEnabled && port->portEnabled) ? bridgeAssuranceTimeout (bridge, (PortIndex) portIndex) : 0;
 
-		if (bridge->started)
+		if (bridge->started && port->adminEnabled)
 			RunStateMachines (bridge, timestamp);
 	}
 
@@ -731,7 +890,7 @@ void STP_SetPortLoopGuard (struct STP_BRIDGE* bridge, unsigned int portIndex, bo
 	{
 		port->loopGuard = loopGuard;
 
-		if (bridge->started)
+		if (bridge->started && port->adminEnabled)
 			RunStateMachines (bridge, timestamp);
 	}
 
@@ -760,7 +919,7 @@ void STP_SetAdminPointToPointMAC (struct STP_BRIDGE* bridge, unsigned int portIn
 
 	port->adminPointToPointMAC = adminPointToPointMAC;
 
-	if (port->portEnabled)
+	if (port->adminEnabled && port->portEnabled)
 	{
 		bool newOperPointToPointMAC = (adminPointToPointMAC == STP_ADMIN_P2P_FORCE_TRUE)
 			|| ((adminPointToPointMAC == STP_ADMIN_P2P_AUTO) && port->detectedPointToPointMAC);
@@ -809,8 +968,14 @@ static void RecomputePrioritiesAndPortRoles (STP_BRIDGE* bridge, unsigned int tr
 		// Note that callers of this function expect recomputation for all trees when CIST_INDEX is passed, so don't change this functionality.
 		for (treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
 		{
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
 			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 			{
+				if (!bridge->IsPortEnabled (portIndex))
+					continue;
+
 				PORT_TREE* portTree = bridge->ports[portIndex]->trees[treeIndex];
 				portTree->selected = false;
 				portTree->reselect = true;
@@ -822,6 +987,9 @@ static void RecomputePrioritiesAndPortRoles (STP_BRIDGE* bridge, unsigned int tr
 		// recompute specified MSTI
 		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
+
 			PORT_TREE* portTree = bridge->ports[portIndex]->trees[treeIndex];
 			portTree->selected = false;
 			portTree->reselect = true;
@@ -859,7 +1027,7 @@ void STP_SetBridgePriority (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned
 		bid.SetPriorityAndMstid(bridgePriority, treeIndex);
 		bridge->trees[treeIndex]->SetBridgeIdentifier(bid);
 
-		if (bridge->started && (treeIndex < bridge->treeCount()))
+		if (bridge->started && bridge->IsTreeEnabled (treeIndex) && (treeIndex < bridge->treeCount()))
 			RecomputePrioritiesAndPortRoles (bridge, treeIndex, timestamp);
 	}
 	else
@@ -898,7 +1066,7 @@ void STP_SetPortPriority (STP_BRIDGE* bridge, unsigned int portIndex, unsigned i
 	// It would make sense that stuff is recomputed also when the port priority in the portId variable
 	// is changed (as it is recomputed for the bridge priority), but either the spec does not mention this, or I'm not seeing it.
 	// Anyway, information about the new port priority can only be propagated by such a recomputation, so let's do that.
-	if (bridge->started && (treeIndex < bridge->treeCount()))
+	if (bridge->started && bridge->IsPortTreeEnabled (portIndex, treeIndex) && (treeIndex < bridge->treeCount()))
 		RecomputePrioritiesAndPortRoles (bridge, treeIndex, timestamp);
 
 	LOG (bridge, -1, -1, "------------------------------------\r\n");
@@ -1116,6 +1284,8 @@ STP_PORT_ROLE STP_GetPortRole (const STP_BRIDGE* bridge, unsigned int portIndex,
 {
 	// This value has meaning only while STP is enabled. Let's check that it is.
 	assert (bridge->started);
+	if (!bridge->IsPortTreeEnabled (portIndex, treeIndex))
+		return STP_PORT_ROLE_DISABLED;
 	return bridge->ports [portIndex]->trees [treeIndex]->role;
 }
 
@@ -1123,6 +1293,8 @@ bool STP_GetPortLearning (const STP_BRIDGE* bridge, unsigned int portIndex, unsi
 {
 	// This value has meaning only while STP is enabled. Let's check that it is.
 	assert (bridge->started);
+	if (!bridge->IsPortTreeEnabled (portIndex, treeIndex))
+		return false;
 	return bridge->ports [portIndex]->trees [treeIndex]->learning;
 }
 
@@ -1130,6 +1302,8 @@ bool STP_GetPortForwarding (const STP_BRIDGE* bridge, unsigned int portIndex, un
 {
 	// This value has meaning only while STP is enabled. Let's check that it is.
 	assert (bridge->started);
+	if (!bridge->IsPortTreeEnabled (portIndex, treeIndex))
+		return false;
 	return bridge->ports [portIndex]->trees [treeIndex]->forwarding;
 }
 
@@ -1321,7 +1495,7 @@ void STP_SetAdminExternalPortPathCost (struct STP_BRIDGE* bridge, unsigned int p
 	{
 		port->adminExternalPortPathCost = adminExternalPortPathCost;
 
-		if (port->portEnabled)
+		if (port->adminEnabled && port->portEnabled)
 		{
 			unsigned int newCost = (port->adminExternalPortPathCost != 0) ? port->adminExternalPortPathCost : port->detectedPortPathCost;
 			if (port->ExternalPortPathCost != newCost)
@@ -1348,7 +1522,7 @@ void STP_SetAdminInternalPortPathCost (struct STP_BRIDGE* bridge, unsigned int p
 	{
 		portTree->adminInternalPortPathCost = adminInternalPortPathCost;
 
-		if (port->portEnabled)
+		if (port->adminEnabled && port->portEnabled && bridge->IsTreeEnabled (treeIndex))
 		{
 			unsigned int newCost = (portTree->adminInternalPortPathCost != 0) ? portTree->adminInternalPortPathCost : port->detectedPortPathCost;
 			if (portTree->InternalPortPathCost != newCost)

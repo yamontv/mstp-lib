@@ -140,6 +140,13 @@ const struct STP_BRIDGE_ADDRESS* STP_GetBridgeAddress (const struct STP_BRIDGE* 
 void STP_OnPortEnabled (struct STP_BRIDGE* bridge, unsigned int portIndex, unsigned int speedMegabitsPerSecond, bool detectedPointToPointMAC, unsigned int timestamp);
 void STP_OnPortDisabled (struct STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp);
 
+// These control whether a port or MSTI participates in the state machines.
+// They default to enabled for backwards compatibility.
+void STP_SetPortAdminEnabled (struct STP_BRIDGE* bridge, unsigned int portIndex, bool enabled, unsigned int timestamp);
+bool STP_GetPortAdminEnabled (const struct STP_BRIDGE* bridge, unsigned int portIndex);
+void STP_SetMstiEnabled (struct STP_BRIDGE* bridge, unsigned int treeIndex, bool enabled, unsigned int timestamp);
+bool STP_GetMstiEnabled (const struct STP_BRIDGE* bridge, unsigned int treeIndex);
+
 // Call this once a second.
 void STP_OnOneSecondTick (struct STP_BRIDGE* bridge, unsigned int timestamp);
 

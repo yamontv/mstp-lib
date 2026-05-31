@@ -22,6 +22,7 @@ public:
 	PORT_ID					rootPortId;			// 13.26.h) - 13.26.9
 	PRIORITY_VECTOR			rootPriority;		// 13.26.i) - 13.26.10
 	TIMES					rootTimes;			// 13.26.j) - 13.26.11
+	bool					enabled;			// Non-standard. Allows applications to keep allocated MSTIs out of the state machines.
 
 private:
 	void UpdateBridgePriorityFromBridgeIdentifier()
@@ -94,7 +95,34 @@ struct STP_BRIDGE
 	unsigned int mstiCount;
 	unsigned int maxVlanNumber;
 
-	unsigned int treeCount() const { return 1 + ((ForceProtocolVersion >= STP_VERSION_MSTP) ? mstiCount : 0); }
+	bool IsTreeEnabled (unsigned int treeIndex) const
+	{
+		return (treeIndex == CIST_INDEX) || trees[treeIndex]->enabled;
+	}
+
+	bool IsPortEnabled (unsigned int portIndex) const
+	{
+		return ports[portIndex]->adminEnabled;
+	}
+
+	bool IsPortTreeEnabled (unsigned int portIndex, unsigned int treeIndex) const
+	{
+		return IsPortEnabled (portIndex) && IsTreeEnabled (treeIndex);
+	}
+
+	unsigned int treeCount() const
+	{
+		if (ForceProtocolVersion < STP_VERSION_MSTP)
+			return 1;
+
+		for (unsigned int treeIndex = mstiCount; treeIndex > 0; treeIndex--)
+		{
+			if (trees[treeIndex]->enabled)
+				return 1 + treeIndex;
+		}
+
+		return 1;
+	}
 
 	BRIDGE_TREE** trees;
 	PORT** ports;
