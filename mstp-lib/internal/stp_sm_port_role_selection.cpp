@@ -78,6 +78,27 @@ static void InitState (STP_BRIDGE* bridge, TreeIndex givenTree, State state, uns
 		clearReselectTree (bridge, givenTree);
 		updtRolesTree (bridge, givenTree);
 		setSelectedTree (bridge, givenTree);
+
+		// Boundary MSTI roles depend on the selected CIST role and regional
+		// information. External BPDUs do not request MSTI selection themselves.
+		if (givenTree == CIST_INDEX)
+		{
+			for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
+			{
+				if (!bridge->IsTreeEnabled (treeIndex))
+					continue;
+
+				for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+				{
+					if (!bridge->IsPortEnabled (portIndex))
+						continue;
+
+					PORT_TREE* portTree = bridge->ports [portIndex]->trees [treeIndex];
+					portTree->reselect = true;
+					portTree->selected = false;
+				}
+			}
+		}
 	}
 	else
 		assert (false);

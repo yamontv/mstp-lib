@@ -57,13 +57,13 @@ void PORT_ID::Reset ()
 
 unsigned char PORT_ID::GetPriority () const
 {
-	assert (_low != 0); // structure was not initialized; it must have been initialized with Set()
+	assert (IsInitialized ()); // structure was not initialized; it must have been initialized with Set()
 	return _high & 0xF0;
 }
 
 void PORT_ID::SetPriority (unsigned char priority)
 {
-	assert (_low != 0); // structure was not initialized; it must have been initialized with Set()
+	assert (IsInitialized ()); // structure was not initialized; it must have been initialized with Set()
 	assert ((priority & 0x0F) == 0);
 
 	_high = priority | (_high & 0x0F);
@@ -71,14 +71,14 @@ void PORT_ID::SetPriority (unsigned char priority)
 
 unsigned short PORT_ID::GetPortNumber () const
 {
-	assert (_low != 0); // structure was not initialized; it must have been initialized with Set()
+	assert (IsInitialized ()); // structure was not initialized; it must have been initialized with Set()
 
-	return ((unsigned short) _high & 0x0F) | _low;
+	return (((unsigned short) _high & 0x0F) << 8) | _low;
 }
 
 unsigned short PORT_ID::GetPortIdentifier () const
 {
-	assert (_low != 0); // structure was not initialized; it must have been initialized with Set()
+	assert (IsInitialized ()); // structure was not initialized; it must have been initialized with Set()
 
 	unsigned short id = (((unsigned short) _high) << 8) | (unsigned short) _low;
 	return id;
@@ -86,7 +86,7 @@ unsigned short PORT_ID::GetPortIdentifier () const
 
 bool PORT_ID::IsBetterThan (const PORT_ID& rhs) const
 {
-	assert (_low != 0); // structure was not initialized; it must have been initialized with Set()
+	assert (IsInitialized ()); // structure was not initialized; it must have been initialized with Set()
 
 	unsigned short lv = (((unsigned short) this->_high) << 8) | (unsigned short) this->_low;
 	unsigned short rv = (((unsigned short) rhs._high) << 8) | (unsigned short) rhs._low;

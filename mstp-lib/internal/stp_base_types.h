@@ -140,10 +140,10 @@ struct PORT_ID
 private:
 	unsigned char _high;
 	unsigned char _low;
-	// Valid Port Numbers are in the range 1 through 4095. Value zero in _low means that the structure contains uninitialized data.
+	// Valid Port Numbers are in the range 1 through 4095. A zero 12-bit Port Number means uninitialized data.
 
 public:
-	bool IsInitialized () const { return _low != 0; }
+	bool IsInitialized () const { return ((_high & 0x0F) != 0) || (_low != 0); }
 
 	void Set (unsigned char priority, unsigned short portNumber);
 	void Reset ();
