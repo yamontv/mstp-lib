@@ -14,6 +14,8 @@ static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp);
 static void RecomputePrioritiesAndPortRoles (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned int timestamp);
 static void DisablePortState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp);
 static void DisableTreeState (STP_BRIDGE* bridge, unsigned int treeIndex, unsigned int timestamp);
+static void InitializePortState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp);
+static void InitializePortTreeState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int treeIndex, unsigned int timestamp);
 static void ComputeMstConfigDigest (STP_BRIDGE* bridge);
 
 // ============================================================================
@@ -398,7 +400,12 @@ void STP_SetPortAdminEnabled (STP_BRIDGE* bridge, unsigned int portIndex, bool e
 		port->adminEnabled = enabled;
 
 		if (bridge->started)
-			RestartStateMachines (bridge, timestamp);
+		{
+			if (enabled)
+				InitializePortState (bridge, portIndex, timestamp);
+
+			RecomputePrioritiesAndPortRoles (bridge, CIST_INDEX, timestamp);
+		}
 	}
 
 	LOG (bridge, -1, -1, "------------------------------------\r\n");
@@ -437,7 +444,24 @@ void STP_SetMstiEnabled (STP_BRIDGE* bridge, unsigned int treeIndex, bool enable
 		}
 
 		if (bridge->started)
-			RestartStateMachines (bridge, timestamp);
+		{
+			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+			{
+				if (!bridge->IsPortEnabled (portIndex))
+					continue;
+
+				if (enabled)
+					InitializePortTreeState (bridge, portIndex, treeIndex, timestamp);
+				bridge->ports[portIndex]->newInfoMsti = true;
+			}
+			if (enabled)
+			{
+				tree->portRoleSelectionState = PortRoleSelection::INIT_TREE;
+				PortRoleSelection::sm.initState (bridge, (TreeIndex)treeIndex, tree->portRoleSelectionState, timestamp);
+			}
+
+			RunStateMachines (bridge, timestamp);
+		}
 	}
 
 	LOG (bridge, -1, -1, "------------------------------------\r\n");
@@ -687,6 +711,52 @@ static void DisableTreeState (STP_BRIDGE* bridge, unsigned int treeIndex, unsign
 {
 	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		DisablePortTreeState (bridge, portIndex, treeIndex, timestamp);
+}
+
+// Initialize only a newly participating slot. Other receive timers and guard
+// state must survive management changes to this port or MSTI (13.24-13.39).
+static void InitializePortTreeState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int treeIndex, unsigned int timestamp)
+{
+	PORT_TREE* tree = bridge->ports[portIndex]->trees[treeIndex];
+	PortAndTree pt = {(PortIndex)portIndex, (TreeIndex)treeIndex};
+
+	tree->portInformationState = PortInformation::DISABLED;
+	PortInformation::sm.initState (bridge, pt, tree->portInformationState, timestamp);
+	tree->portRoleTransitionsState = PortRoleTransitions::INIT_PORT;
+	PortRoleTransitions::sm.initState (bridge, pt, tree->portRoleTransitionsState, timestamp);
+	tree->portStateTransitionState = PortStateTransition::DISCARDING;
+	PortStateTransition::sm.initState (bridge, pt, tree->portStateTransitionState, timestamp);
+
+	// Complete the disabled baseline before role selection can attach a new
+	// MSTI to an already-live CIST boundary. No learning/forwarding is active.
+	tree->portRoleTransitionsState = PortRoleTransitions::DISABLED_PORT;
+	PortRoleTransitions::sm.initState (bridge, pt, tree->portRoleTransitionsState, timestamp);
+
+	tree->topologyChangeState = TopologyChange::INACTIVE;
+	TopologyChange::sm.initState (bridge, pt, tree->topologyChangeState, timestamp);
+}
+
+static void InitializePortState (STP_BRIDGE* bridge, unsigned int portIndex, unsigned int timestamp)
+{
+	PORT* port = bridge->ports[portIndex];
+	PortIndex pi = (PortIndex)portIndex;
+
+	port->portTimersState = PortTimers::ONE_SECOND;
+	PortTimers::sm.initState (bridge, pi, port->portTimersState, timestamp);
+	port->portProtocolMigrationState = PortProtocolMigration::CHECKING_RSTP;
+	PortProtocolMigration::sm.initState (bridge, pi, port->portProtocolMigrationState, timestamp);
+	port->portReceiveState = PortReceive::DISCARD;
+	PortReceive::sm.initState (bridge, pi, port->portReceiveState, timestamp);
+	port->bridgeDetectionState = port->AdminEdge ? BridgeDetection::EDGE : BridgeDetection::NOT_EDGE;
+	BridgeDetection::sm.initState (bridge, pi, port->bridgeDetectionState, timestamp);
+	port->portTransmitState = PortTransmit::TRANSMIT_INIT;
+	PortTransmit::sm.initState (bridge, pi, port->portTransmitState, timestamp);
+
+	for (unsigned int treeIndex = 0; treeIndex < bridge->treeCount(); treeIndex++)
+	{
+		if (bridge->IsTreeEnabled (treeIndex))
+			InitializePortTreeState (bridge, portIndex, treeIndex, timestamp);
+	}
 }
 
 // ============================================================================
