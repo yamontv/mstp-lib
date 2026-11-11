@@ -435,7 +435,7 @@ void rcvMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 			// portTree->msgPriority.ExternalRootPathCost
 			portTree->msgPriority.RegionalRootId		= message->RegionalRootId;
 			portTree->msgPriority.InternalRootPathCost	= message->InternalRootPathCost;
-			portTree->msgPriority.DesignatedBridgeId.SetPriorityAndMstid (message->BridgePriority << 8, (unsigned short)mstid); // 14.2.5 in 802.1Q-2018
+			portTree->msgPriority.DesignatedBridgeId.SetPriorityAndMstid ((message->BridgePriority & 0xF0) << 8, (unsigned short)mstid); // 14.4.1: ignore reserved low bits.
 			portTree->msgPriority.DesignatedBridgeId.SetAddress (bridge->receivedBpduContent->cistBridgeId.GetAddress().bytes);
 			portTree->msgPriority.DesignatedPortId.Set (message->PortPriority & 0xF0, bridge->receivedBpduContent->cistPortId.GetPortNumber());
 
@@ -623,19 +623,16 @@ void recordMastered (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTre
 				if (!bridge->IsTreeEnabled (treeIndex))
 					continue;
 
-				port->mastered = false;
+				port->trees[treeIndex]->mastered = false;
 			}
 		}
 	}
 	else
 	{
-		if (bridge->receivedBpduPort->operPointToPointMAC && port->trees[givenTree]->msgFlagsTcAckOrMaster)
-			port->mastered = true;
-		else
-			port->mastered = false;
+		port->trees[givenTree]->mastered = port->operPointToPointMAC && port->trees[givenTree]->msgFlagsTcAckOrMaster;
 	}
 
-	LOG (bridge, givenPort, givenTree, "Port {D}: {TN}: recordMastered(): {D}\r\n", 1 + givenPort, givenTree, (int) port->mastered);
+	LOG (bridge, givenPort, givenTree, "Port {D}: {TN}: recordMastered(): {D}\r\n", 1 + givenPort, givenTree, (int) port->trees[givenTree]->mastered);
 }
 
 // ============================================================================
@@ -939,6 +936,27 @@ void txConfig (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 }
 
 // ============================================================================
+// 13.27.36: this is derived from current per-tree roles, not shared between
+// MSTIs. The boundary Master port itself must not advertise the flag outward.
+static bool MstiMasterFlag (const STP_BRIDGE* bridge, PortIndex givenPort, unsigned int givenTree)
+{
+	const STP_PORT_ROLE role = bridge->ports[givenPort]->trees[givenTree]->role;
+	if ((role != STP_PORT_ROLE_ROOT) && (role != STP_PORT_ROLE_DESIGNATED))
+		return false;
+
+	for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
+	{
+		const PORT_TREE* other = bridge->ports[portIndex]->trees[givenTree];
+		if (other->role == STP_PORT_ROLE_MASTER)
+			return true;
+		if ((portIndex != givenPort) && other->mastered &&
+			((other->role == STP_PORT_ROLE_ROOT) || (other->role == STP_PORT_ROLE_DESIGNATED)))
+			return true;
+	}
+
+	return false;
+}
+
 // 13.29.aa) - 13.29.28
 void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 {
@@ -1060,7 +1078,7 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 			if (tree->tcWhile != 0)
 				mstiMessage->flags |= (unsigned char) 1;
 
-			if (port->master)
+			if (MstiMasterFlag (bridge, givenPort, treeIndex))
 				mstiMessage->flags |= (unsigned char) 0x80;
 
 			if (tree->learning)

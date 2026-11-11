@@ -668,6 +668,7 @@ static void DisablePortTreeState (STP_BRIDGE* bridge, unsigned int portIndex, un
 	tree->agree = false;
 	tree->agreed = false;
 	tree->loopInconsistent = false;
+	tree->mastered = false;
 	tree->learn = false;
 	tree->forward = false;
 	tree->selected = false;

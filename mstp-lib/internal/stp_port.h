@@ -24,6 +24,7 @@ struct PORT_TREE
 	bool forwarding : 1; // 13.27.aw) - 13.27.30
 	bool learn      : 1; // 13.27.az) - 13.27.34
 	bool learning   : 1; // 13.27.ba) - 13.27.35
+	bool mastered   : 1; // 13.27.37; received Master flag for this MSTI.
 	bool proposed   : 1; // 13.27.bg) - 13.27.49
 	bool proposing  : 1; // 13.27.bh) - 13.27.50
 	bool rcvdMsg    : 1; // 13.27.bj) - 13.27.55
@@ -127,8 +128,6 @@ struct PORT
 
 	// If MSTP or the ISIS-SPB is implemented, there is one instance per port of each of the following variables for the CIST:
 	bool infoInternal; // 13.27.aa) - 13.27.31
-	bool master;       // 13.27.ab) - 13.27.36
-	bool mastered;     // 13.27.ac) - 13.27.37
 
 	// A single per port instance of the following variable(s) applies to all MSTIs:
 	bool newInfoMsti; // 13.27.ad) - 13.27.43

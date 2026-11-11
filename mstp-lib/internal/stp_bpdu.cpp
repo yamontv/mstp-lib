@@ -169,6 +169,16 @@ enum VALIDATED_BPDU_TYPE STP_GetValidatedBpduType (enum STP_VERSION bridgeStpVer
 		return VALIDATED_BPDU_TYPE_RST;
 	}
 
+	// The declared MST extension must fit the received buffer before any
+	// decoder or diagnostic reads its records. A 102-octet truncated packet
+	// still takes 14.5(d)'s short RST fallback; longer partial records are invalid.
+	if ((bpduHeader->protocolVersionId >= 3) && (bpduHeader->bpduType == 2) && (bridgeStpVersion >= STP_VERSION_MSTP)
+		&& (bpduSize >= sizeof(MSTP_BPDU))
+		&& (offsetof(MSTP_BPDU, mstConfigId) + reinterpret_cast<const MSTP_BPDU*>(bpdu)->Version3Length > bpduSize))
+	{
+		return (bpduSize == sizeof(MSTP_BPDU)) ? VALIDATED_BPDU_TYPE_RST : VALIDATED_BPDU_TYPE_UNKNOWN;
+	}
+
 	// e) If the Protocol Identifier is 0000 0000 0000 0000, the Protocol Version Identifier is 3 or greater and
 	// the Bridge is configured as an MST Bridge or the Protocol Version Identifier is 3 and the Bridge is
 	// configured as an SPT Bridge or according to a future revision of this standard that intends to provide

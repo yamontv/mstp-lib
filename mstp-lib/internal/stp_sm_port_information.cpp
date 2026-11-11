@@ -178,6 +178,7 @@ static void InitState (STP_BRIDGE* bridge, PortAndTree pt, State state, unsigned
 		portTree->proposing = portTree->proposed = portTree->agree = portTree->agreed = false;
 		portTree->rcvdInfoWhile = 0;
 		portTree->loopInconsistent = false;
+		portTree->mastered = false;
 		portTree->infoIs = INFO_IS_DISABLED; portTree->reselect = true; portTree->selected = false;
 	}
 	else if (state == AGED)
