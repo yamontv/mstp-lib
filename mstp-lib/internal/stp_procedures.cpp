@@ -167,25 +167,27 @@ void newTcWhile (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree, u
 	PORT* port = bridge->ports [givenPort];
 	PORT_TREE* portTree = port->trees [givenTree];
 
-	if ((portTree->tcWhile == 0) && port->sendRSTP)
+	if (portTree->tcWhile != 0)
+		return;
+
+	// 12.8.1.1.3/12.8.1.2.3: count the start of an interval with any
+	// nonzero TC timer, including a port interoperating with legacy STP.
+	if (bridge->callbacks.onTopologyChange)
 	{
-		// Note AG: See in 802.1Q-2018:
-		//  - 12.8.1.1.3, b) and c);
-		//  - 12.8.1.2.3, c) and d).
-		if (bridge->callbacks.onTopologyChange)
+		bool allZero = true;
+		for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
 		{
-			bool allZero = true;
-			for (unsigned int portIndex = 0; portIndex < bridge->portCount; portIndex++)
-			{
-				if (!bridge->IsPortEnabled (portIndex))
-					continue;
+			if (!bridge->IsPortEnabled (portIndex))
+				continue;
 
-				allZero &= (bridge->ports[portIndex]->trees[givenTree]->tcWhile == 0);
-			}
-			if (allZero)
-				bridge->callbacks.onTopologyChange (bridge, (unsigned int) givenTree, timestamp);
+			allZero &= (bridge->ports[portIndex]->trees[givenTree]->tcWhile == 0);
 		}
+		if (allZero)
+			bridge->callbacks.onTopologyChange (bridge, (unsigned int) givenTree, timestamp);
+	}
 
+	if (port->sendRSTP)
+	{
 		portTree->tcWhile = 1 + port->trees [CIST_INDEX]->portTimes.HelloTime;
 
 		if (givenTree == CIST_INDEX)
@@ -193,8 +195,7 @@ void newTcWhile (STP_BRIDGE* bridge, PortIndex givenPort, TreeIndex givenTree, u
 		else
 			port->newInfoMsti = true;
 	}
-
-	if ((portTree->tcWhile == 0) && !port->sendRSTP)
+	else
 	{
 		portTree->tcWhile = bridge->trees [givenTree]->rootTimes.MaxAge + bridge->trees [givenTree]->rootTimes.ForwardDelay;
 	}
