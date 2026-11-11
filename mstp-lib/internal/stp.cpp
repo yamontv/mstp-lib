@@ -823,7 +823,14 @@ static void RestartStateMachines (STP_BRIDGE* bridge, unsigned int timestamp)
 
 void STP_SetPortAdminEdge (struct STP_BRIDGE* bridge, unsigned int portIndex, bool adminEdge, unsigned int timestamp)
 {
-	bridge->ports [portIndex]->AdminEdge = adminEdge;
+	PORT* port = bridge->ports[portIndex];
+	if (port->AdminEdge != adminEdge)
+	{
+		port->AdminEdge = adminEdge;
+
+		if (bridge->started && port->adminEnabled)
+			RunStateMachines (bridge, timestamp);
+	}
 }
 
 bool STP_GetPortAdminEdge (const struct STP_BRIDGE* bridge, unsigned int portIndex)

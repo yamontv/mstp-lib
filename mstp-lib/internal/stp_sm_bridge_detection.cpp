@@ -73,7 +73,8 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortIndex givenPort, Sta
 			return EDGE;
 		}
 
-			if ((port->edgeDelayWhile == 0) && !port->AdminEdge && !port->AutoEdge && port->sendRSTP && port->trees [CIST_INDEX]->proposing && port->operPointToPointMAC)
+		// 13.23/13.27.19 make isolation an explicitly enabled capability.
+		if (port->AutoIsolate && (port->edgeDelayWhile == 0) && !port->AdminEdge && !port->AutoEdge && port->sendRSTP && port->trees [CIST_INDEX]->proposing && port->operPointToPointMAC)
 		{
 			return ISOLATED;
 		}
@@ -99,7 +100,7 @@ static State CheckConditions (const STP_BRIDGE* bridge, PortIndex givenPort, Sta
 
 	if (state == ISOLATED)
 	{
-		if (port->AdminEdge || port->AutoEdge || !port->isolate || !port->operPointToPointMAC)
+		if (!port->AutoIsolate || port->AdminEdge || port->AutoEdge || !port->isolate || !port->operPointToPointMAC)
 		{
 			return NOT_EDGE;
 		}
