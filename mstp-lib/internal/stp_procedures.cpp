@@ -413,24 +413,18 @@ void rcvMsgs (STP_BRIDGE* bridge, PortIndex givenPort)
 		size_t mstiLength = version3Length - version3CistLength;
 		assert ((mstiLength % sizeof(MSTI_CONFIG_MESSAGE)) == 0); // this should have been checked while validating the BPDU as MST
 
-		size_t mstiMessageCount = mstiLength / sizeof(MSTI_CONFIG_MESSAGE);
+		const size_t mstiMessageCount = mstiLength / sizeof(MSTI_CONFIG_MESSAGE);
 
 		const MSTI_CONFIG_MESSAGE* mstiMessages = reinterpret_cast<const MSTI_CONFIG_MESSAGE*>(bridge->receivedBpduContent + 1);
 
-		const size_t activeMstiMessageCount = bridge->treeCount() - 1;
-		if (mstiMessageCount > activeMstiMessageCount)
-		{
-			// The sender sent us too many MSTI messages. Let's ignore the ones we can't handle.
-			LOG (bridge, -1, -1, "rcvMsgs() -- Ignoring MSTI messages {D}..{D}\r\n", (int)activeMstiMessageCount, (int)mstiMessageCount - 1);
-			mstiMessageCount = activeMstiMessageCount;
-		}
-		
 		for (size_t messageIndex = 0; messageIndex < mstiMessageCount; messageIndex++)
 		{
 			const MSTI_CONFIG_MESSAGE* message = &mstiMessages[messageIndex];
 
-			size_t mstid = 1 + messageIndex;
-			if (!bridge->IsTreeEnabled ((unsigned int)mstid))
+			// 13.29.13/14.4.1: the record identifies its MSTI; sparse IDs do
+			// not require messages for the intervening, unconfigured trees.
+			const unsigned int mstid = message->RegionalRootId.GetMstid();
+			if ((mstid == CIST_INDEX) || (mstid > bridge->mstiCount) || !bridge->IsTreeEnabled (mstid))
 				continue;
 
 			PORT_TREE* portTree = port->trees[mstid];
@@ -955,7 +949,14 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 	if (bridge->ForceProtocolVersion < 3)
 		bpduSize = (unsigned int) offsetof (struct MSTP_BPDU, Version3Length);
 	else
-		bpduSize = sizeof(MSTP_BPDU) + (bridge->treeCount() - 1) * sizeof(MSTI_CONFIG_MESSAGE);
+	{
+		bpduSize = sizeof(MSTP_BPDU);
+		for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
+		{
+			if (bridge->IsTreeEnabled (treeIndex))
+				bpduSize += sizeof(MSTI_CONFIG_MESSAGE);
+		}
+	}
 
 	FLUSH_LOG (bridge);
 
@@ -1040,9 +1041,12 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 		MSTI_CONFIG_MESSAGE* mstiMessage = reinterpret_cast<MSTI_CONFIG_MESSAGE*>(bpdu + 1);
 
 		// 14.4.1 in 802.1Q-2018
-		for (unsigned int mstiIndex = 0; mstiIndex < (bridge->treeCount() - 1); mstiIndex++)
+		for (unsigned int treeIndex = 1; treeIndex < bridge->treeCount(); treeIndex++)
 		{
-			const PORT_TREE* tree = port->trees [1 + mstiIndex];
+			if (!bridge->IsTreeEnabled (treeIndex))
+				continue;
+
+			const PORT_TREE* tree = port->trees [treeIndex];
 
 			// a)
 			mstiMessage->flags = GetBpduPortRole (tree->role) << 2;
@@ -1068,7 +1072,7 @@ void txRstp (STP_BRIDGE* bridge, PortIndex givenPort, unsigned int timestamp)
 			// b) to e)
 			mstiMessage->RegionalRootId       = tree->designatedPriority.RegionalRootId;
 			mstiMessage->InternalRootPathCost = tree->designatedPriority.InternalRootPathCost;
-			mstiMessage->BridgePriority       = bridge->trees[1 + mstiIndex]->GetBridgeIdentifier().GetPriorityWithoutMstid() >> 8;
+			mstiMessage->BridgePriority       = bridge->trees[treeIndex]->GetBridgeIdentifier().GetPriorityWithoutMstid() >> 8;
 			mstiMessage->PortPriority         = tree->portId.GetPriority();
 			// f)
 			mstiMessage->RemainingHops        = tree->designatedTimes.remainingHops;
